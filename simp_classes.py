@@ -8,7 +8,7 @@ class OperationType(Enum):
     ERR = 0x01
     SYN = 0x02
     ACK = 0x04
-    SYNACK = 0x06
+    SYNACK = 0x06 # Combination of SYN and ACK
     FIN = 0x08
 
 
@@ -128,44 +128,3 @@ def message_to_datagram(type: MessageType, operation: OperationType, sequence: i
     #                                    OperationType.ERR, 0x00, 'user5', 'Hello, world!')
     # print(chat_message)
     # print(Datagram(chat_message))
-
-    # Server
-    # def wait_and_receive(host, port):
-    #     print('Waiting for incoming requests...')
-    #     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-    #         s.bind((host, port))
-    #         s.settimeout(1.0)  # Set a timeout of 1 second
-    #         try:
-    #             while True:
-    #                 try:
-    #                     data, addr = s.recvfrom(1024)  # Receive data with timeout
-    #                     message_received = Message(
-    #                         MessageType(data[0]), data[1:5], data[5:])
-    #                 except socket.timeout:
-    #                     continue  # Timeout occurred, loop again to check for KeyboardInterrupt
-
-    #                 # Process the received data
-    #                 if not data:
-    #                     break
-
-    #                 print(
-    #                     f'Received data: {message_received.get_payload()} from {addr}')
-
-    #                 # Send back OK message
-    #                 reply = Message(MessageType.STRING,
-    #                                 bytes([2]), b'OK').to_bytes()
-    #                 print('Sending back data:', reply)
-    #                 s.sendto(reply, addr)
-    #         except KeyboardInterrupt:
-    #             print('Exiting...')
-    #     print('Server shutdown.')
-
-    # def show_usage():
-    #     print('Usage: sockets_server.py <host> <port>')
-
-    # if __name__ == "__main__":
-    #     if len(sys.argv) != 3:
-    #         show_usage()
-    #         exit(1)
-
-    #     wait_and_receive(sys.argv[1], int(sys.argv[2]))
