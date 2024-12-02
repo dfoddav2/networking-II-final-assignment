@@ -51,8 +51,23 @@ class Client:
                 break
             # TODO: Here handle the actual types of responses from the Daemon, not simply print it
             print("Response received from daemon:", response.decode('ascii'))
+            decoded_response = response.decode('ascii')
+            if decoded_response.startswith("CONNECT"):
+                message = decoded_response.split(" ", 1)[1]
+                print(message)
+                accept_invitation = None
+                while accept_invitation not in ["Y", "y", "N", "n"]:
+                    accept_invitation = input(
+                        "Do you accept the invitation? (Y/N): ")
+                    if accept_invitation in ["Y", "y"]:
+                        self.send_command("ACCEPT")
+                    elif accept_invitation in ["N", "n"]:
+                        self.send_command("REJECT")
+                    else:
+                        print("Invalid input. Please enter 'Y', 'y' or 'N'. 'n'.")
 
     # Handle user input and send commands to the Daemon accordingly
+
     def handle_user_input(self):
         if not self.connected:
             print("Not connected to daemon. Exiting.")
