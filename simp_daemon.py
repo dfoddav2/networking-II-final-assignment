@@ -7,9 +7,9 @@ from simp_classes import Datagram, MessageType, OperationType, message_to_datagr
 
 
 class Daemon:
-    def __init__(self, host, username):
+    def __init__(self, host):
         self.host = host
-        self.username = username # TODO: Have the username be given as a first step by the connecting client
+        self.username = None
         
         # Create a UDP socket - for DAEMON to DAEMON communication
         self.daemon_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -148,7 +148,7 @@ class Daemon:
 
     # Start the daemon
 
-    def start(self):
+    def start_daemon_listener(self):
         # Timeout of 1 second for keyboard interrupt
         print("Starting SIMP daemon...")
         print(f"Listening for daemon connections on {self.host}:7777...")
@@ -171,10 +171,20 @@ class Daemon:
             print("Exiting...")
             self.daemon_socket.close()
         print("Daemon shutdown.")
+        
+    def start_client_listener(self):
+        print("\n** Waiting for client connection on port 7778... **\n")
+        while True:
+            conn, addr = self.client_socket.accept()
+            # Start a new thread to handle the connection
+            # Sleep for a short time to avoid busy-waiting
+            threading.Thread(target=self.handle_client,
+                             args=(conn, addr)).start()
 
     def handle_client(self, conn, addr):
         # Ensure thread safety with a lock and check if a client is already connected
         with self.client_lock:
+            # If no client is connected yet, accept the connection and set `self.client_conn` to the connection
             if not self.client_is_connected:
                 self.client_is_connected = True
                 # Save the connection on the class so that it can be accessed in handle datagram
@@ -182,14 +192,18 @@ class Daemon:
                 print(f"Local SIMP client connected from: {addr}")
                 self.client_conn.sendall(
                     "Only client, connection successfully established.".encode('ascii'))
+                self.username = self.client_conn.recv(1024).decode('ascii')
+                print(f"**Client username set: {self.username}**")
+            # If there is already a client connected, reject the new connection using the connection
             else:
                 # Client is already connected, reject the new connection
                 print(
                     f"Rejected connection from {addr} because a client is already connected.")
-                self.client_conn.sendall(
+                conn.sendall(
                     "Another client is already connected.".encode('ascii'))
-                self.client_conn.close()
+                conn.close()
                 return
+
         # Handle the client connection if it is accepted
         try:
             with self.client_conn:
@@ -318,26 +332,18 @@ class Daemon:
             self.client_conn.sendall(
                 "No pending chat invitations to reject.".encode('ascii'))
 
-    def start_client_listener(self):
-        print("Waiting for client connection on port 7778...")
-        while True:
-            conn, addr = self.client_socket.accept()
-            # Start a new thread to handle the connection
-            # Sleep for a short time to avoid busy-waiting
-            threading.Thread(target=self.handle_client,
-                             args=(conn, addr)).start()
-
 
 def show_usage():
-    print("Usage: simp_daemon.py <host> <username>")
+    print("Usage: simp_daemon.py <host>")
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3:
+    if len(sys.argv) != 2:
         show_usage()
         exit(1)
 
     # Start the daemon
-    daemon = Daemon(sys.argv[1], sys.argv[2])
-    threading.Thread(target=daemon.start).start()
+    daemon = Daemon(sys.argv[1])
     threading.Thread(target=daemon.start_client_listener).start()
+    threading.Thread(target=daemon.start_daemon_listener).start()
+    

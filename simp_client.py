@@ -6,14 +6,14 @@ import time
 
 
 class Client:
-    def __init__(self, host, username):
+    def __init__(self, host):
         self.host = host
-        self.username = username
+        self.username = None
         self.connected = False
-        
+
         # Message management queue
         self.message_queue = queue.Queue()
-        
+
         # TCP socket for Client to Daemon communication
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
@@ -46,15 +46,15 @@ class Client:
                 # Connection was rejected; close the socket
                 self.socket.close()
                 return
+            else:
+                self.username = input("Please enter your username: ")
+                self.socket.sendall(self.username.encode('ascii'))
+                print(f"- Sent username to daemon: {self.username} -")
 
         # Start receiving responses in a new thread
         self.connected = True  # Connection is established with the Daemon
-        # TODO: Do we need a thread here? 
-        # - the threads allows us to simulataneously wait for user input
-        # - and receive messages from the Daemon
+        # the threads allows us to simulataneously wait for user input and receive messages
         threading.Thread(target=self.receive_response, daemon=True).start()
-        # self.receive_response()
-        
 
     # Send any string command to the local Daemon for processing
     def send_command(self, command):
@@ -106,8 +106,6 @@ class Client:
                     self.invitation = False
                 else:
                     print("Response from daemon:", message)
-
-
 
             # If no message from the daemon, ask for user input based on the current state
             if self.invitation:
@@ -177,16 +175,16 @@ class Client:
 
 
 def show_usage():
-    print("Usage: simp_daemon.py <host> <username>")
+    print("Usage: simp_daemon.py <host>")
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3:
+    if len(sys.argv) != 2:
         show_usage()
         exit(1)
 
     # Start the daemon
-    client = Client(sys.argv[1], sys.argv[2])
+    client = Client(sys.argv[1])
     if client.connected:
         client.handle_user_input()
     else:
