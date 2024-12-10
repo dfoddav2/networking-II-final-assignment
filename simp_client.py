@@ -95,6 +95,7 @@ class Client:
             # Check for messages from the daemon
             while not self.message_queue.empty():
                 message = self.message_queue.get()
+                print("MESSAGE WORKED ON:", message)
                 if message.startswith("CONNECT"):
                     # Handle the invitation
                     self.handle_invitation(message)
@@ -105,7 +106,7 @@ class Client:
                     print(message)
                     self.chatting = True
                     self.invitation = False
-                elif "Chat invitation rejected" in message or "No client is connected" in message:
+                elif "rejected" in message or "already in chat" in message or "No client is connected" in message:
                     print("\n!! " + message + " !!\n")
                     self.invitation = False
                 else:

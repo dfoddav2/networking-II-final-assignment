@@ -1,6 +1,36 @@
 # networking-II-final-assignment
 This is the repository for the final assignment of the WS24/25 course of Networking II.
 
+## Implemented features
+
+### Connection establishment, three-way handshake
+
+The handshake is implemented as described in the requirements.
+In most cases we take it as a given that both users have connected to their respective daemons.
+
+There are 4 main cases that can happen and have been implemented:
+
+1. Everything goes well
+    - User who wants to connect writes in the CLI: `CONNECT <ip>`
+    - This makes the Daemon send a `SYN` to the target
+    - Target Daemon receives `SYN`, forwards question to Client and waits for the Client's answer on what to do
+    - Client writes `y`, accepting the invite, which gets sent as a `ACCEPT` signal to the Daemon
+    - The target Daemon now creates the response message, which is a `SYNACK`, sends it, then waits for the `ACK` from the original Daemon
+    - The original Daemon responds with an `ACK` and sends a message to the client, informing that the connection has been made
+
+2. Target rejects invitation
+    - (same as the first step)
+    - Client writes `n`, rejecting the invite, which gets sent as a `REJECT` signal to the Daemon
+    - The target Daemon now creates the response message which is `FINERR` and sends it to the original Daemon
+    - The original Daemon receives the `FINERR` and forwards its payload to the connected client, sends `ACK`
+    - The connected client prints the message of the payload and resets the invitation status
+
+3. Target Daemon is busy, already in chat with other user / waiting for an invitation to be answered
+
+
+4. Target Daemon is running, but no connected user
+
+
 ## Requirements
 
 In order to put the concepts learned in the course into practice, the programming project aims at implementing a simple messaging protocol for chat applications built on top of UDP. This protocol (that we will call Simple IMC Messaging Protocol, or SIMP for short) could in theory be used by a third-party to implement a chat program at the application layer level.
