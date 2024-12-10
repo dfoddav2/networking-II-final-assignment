@@ -12,6 +12,7 @@ class OperationType(Enum):
     ACK = 0x04
     SYNACK = 0x06  # Combination of SYN and ACK
     FIN = 0x08
+    FINERR = 0x09  # Combination of FIN and ERR
 
 
 class MessageType(Enum):
@@ -92,13 +93,13 @@ def message_to_datagram(type: MessageType, operation: OperationType, sequence_nu
 
     # Check combined constraints
     if type == MessageType.CONTROL:
-        if operation not in [OperationType.ERR, OperationType.SYN, OperationType.ACK, OperationType.SYNACK, OperationType.FIN]:
+        if operation not in [OperationType.ERR, OperationType.SYN, OperationType.ACK, OperationType.SYNACK, OperationType.FIN, OperationType.FINERR]:
             raise ValueError(
                 'Control messages must have SYN, ACK, SYNACK or FIN operations.')
-        if operation != OperationType.ERR and len(payload) > 0:
+        if operation not in [OperationType.ERR, OperationType.FINERR] and len(payload) > 0:
             raise ValueError(
                 'Non-error control messages must not have a payload.')
-        if operation == OperationType.ERR and len(payload) == 0:
+        if operation in [OperationType.ERR, OperationType.FINERR] and len(payload) == 0:
             raise ValueError('Error control messages must have a payload.')
     elif type == MessageType.CHAT:
         if operation != OperationType.ERR:

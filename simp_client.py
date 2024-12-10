@@ -48,8 +48,9 @@ class Client:
                 return
             else:
                 self.username = input("Please enter your username: ")
+                print("Welcome, ", self.username,
+                      " you may now connect to a user via their IP to chat or wait for somebody to connect to you.\n")
                 self.socket.sendall(self.username.encode('ascii'))
-                print(f"- Sent username to daemon: {self.username} -")
 
         # Start receiving responses in a new thread
         self.connected = True  # Connection is established with the Daemon
@@ -62,7 +63,7 @@ class Client:
             self.socket.sendall(command.encode('ascii'))
             print(f"Sent command: {command}")
         else:
-            print("Not connected to daemon. Cannot send command.")
+            print("\n!! Not connected to daemon. Cannot send command.\n")
 
     # Receive response from the Daemon and display it to the user
     def receive_response(self):
@@ -97,12 +98,15 @@ class Client:
                 if message.startswith("CONNECT"):
                     # Handle the invitation
                     self.handle_invitation(message)
+                elif message.startswith("CHAT"):
+                    # Display the chat message
+                    print(message)
                 elif "Chat connection established" in message:
                     print(message)
                     self.chatting = True
                     self.invitation = False
-                elif "Chat invitation rejected" in message:
-                    print(message)
+                elif "Chat invitation rejected" in message or "No client is connected" in message:
+                    print("\n!! " + message + " !!\n")
                     self.invitation = False
                 else:
                     print("Response from daemon:", message)
