@@ -117,6 +117,9 @@ class Daemon:
                             f"\n----------->\nDAEMON: Sending datagram {addr}:\n{Datagram(reply)}\n----------->\n")
                         print(
                             f"!! Sent FINERR to {addr} because user rejected chat. !!\n")
+                        self.pending_invitation = False
+                        self.inviting_user = None
+                        self.inviting_addr = None
 
                 # If already in a chat, send error message
                 else:
@@ -146,12 +149,14 @@ class Daemon:
                 print(
                     f"\n----------->\nDAEMON: Sending datagram {addr}:\n{Datagram(reply_ack)}\n----------->\n")
             elif message_received.header.operation == OperationType.ERR:
-                print(
-                    f"\n!! Chat invitation rejected: {message_received.payload.message} !!\n")
-                self.client_conn.sendall(
-                    f"Chat invitation rejected by {message_received.header.user}.".encode('ascii'))
-                self.is_in_chat = False
-                self.remote_addr = None
+                # TODO: Do something with plain error messages
+                # print(
+                #     f"\n!! Chat invitation rejected: {message_received.payload.message} !!\n")
+                # self.client_conn.sendall(
+                #     f"Chat invitation rejected by {message_received.header.user}.".encode('ascii'))
+                # self.is_in_chat = False
+                # self.remote_addr = None
+                pass
             # FIN: Other client wants to end the chat
             elif message_received.header.operation == OperationType.FIN:
                 reply = message_to_datagram(
@@ -179,10 +184,16 @@ class Daemon:
             elif message_received.header.operation == OperationType.ACK:
                 # TODO: Use ACK for other things too in the future, now just for handshake
                 # - We could differentiate it by a pending invitation flag
-                print(
-                    f"\n** Received ACK from user {message_received.header.user} **\n")
-                self.client_conn.sendall(
-                    f"Chat connection established with {message_received.header.user}.".encode('ascii'))
+
+                # Conditionally handle the ACK if we are waiting for the ACK of a SYNACK
+                if self.pending_invitation:
+                    print(
+                        f"\n** Received ACK from user {message_received.header.user} **\n")
+                    self.client_conn.sendall(
+                        f"Chat connection established with {message_received.header.user}.".encode('ascii'))
+                    self.pending_invitation = False
+                    self.inviting_user = None
+                    self.inviting_addr = None
                 pass
         # 2. Chat message (simply forward to client and send ACK)
         elif message_received.header.message_type == MessageType.CHAT:
@@ -279,6 +290,7 @@ class Daemon:
                         # Start the connection with a SYN message, sequence number 0x00
                         datagram = message_to_datagram(
                             MessageType.CONTROL, OperationType.SYN, 0x00, self.username, "")
+
                         # self.send_with_retransmission(datagram, self.remote_addr)
                         self.daemon_socket.sendto(datagram, self.remote_addr)
                         print(

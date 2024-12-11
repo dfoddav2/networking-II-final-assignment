@@ -30,6 +30,19 @@ There are 4 main cases that can happen and have been implemented:
 
 4. Target Daemon is running, but no connected user
 
+### Stopping the connection
+
+TODO: Right now we are just doing FIN -> ACK to stop a conversation, instead do: FIN -> FINACK -> ACK
+
+## Challenges
+
+Since the client was created as a simple CLI tool, always waiting for an answer from the user using `input()` would keep blocking the incoming messages from other threads. This is why I had to use the `select` library which allows for the manipulation of `stdin`.
+
+Shortcomings:
+- When the user has already written something to the `stdin` and a message comes in, that already written message is nulled, this could be annoying in a real setting.
+    - This could be solved with some mechanism that also reads in the `stdin` before resetting it, then populating the new one with the old message, but I think this is outside of the scope of the project.
+- The `select` library only operates on `stdin` on Linux systems, so the app won't work on Windows.
+    - There is apparently a `msvcrt` module that can do the same for Windows systems, but as system agnosticity is not a requirement, I deemed this too was outside the scope of implementation.
 
 ## Requirements
 

@@ -3,6 +3,7 @@ import threading
 import sys
 import queue
 import time
+import select
 
 
 class Client:
@@ -91,63 +92,87 @@ class Client:
         if not self.connected:
             print("Not connected to daemon. Exiting.")
             return
+
+        self.expecting_invitation_input = False
+        prompt_displayed = False
+
         while True:
             # Check for messages from the daemon
             while not self.message_queue.empty():
                 message = self.message_queue.get()
-                print("MESSAGE WORKED ON:", message)
                 if message.startswith("CONNECT"):
                     # Handle the invitation
                     self.handle_invitation(message)
                 elif message.startswith("CHAT"):
                     # Display the chat message
-                    print(message)
+                    print("\n" + message)
                 elif "Chat connection established" in message:
-                    print(message)
+                    print("\n" + message)
                     self.chatting = True
                     self.invitation = False
+                    self.expecting_invitation_input = False
                 elif "rejected" in message or "already in chat" in message or "No client is connected" in message:
-                    print("\n!! " + message + " !!\n")
+                    print("\n" + message)
                     self.invitation = False
+                    self.expecting_invitation_input = False
                 else:
-                    print("Response from daemon:", message)
+                    print("\nResponse from daemon:", message)
+                prompt_displayed = False  # Redisplay prompt
 
-            # If no message from the daemon, ask for user input based on the current state
-            if self.invitation:
-                time.sleep(0.1)
-                continue
-            elif self.chatting:
-                command = input(
-                    "Enter command (CHAT <message>, QUIT): ")
-                # User wants to send a chat message to connected user
-                if command.startswith("CHAT"):
-                    _, message = command.split(maxsplit=1)
-                    self.send_chat_message(message)
-                # User wants to quit the chat
-                elif command == "QUIT":
-                    self.quit_chat()
-                    break
+            # Now check for user input
+            if not prompt_displayed:
+                if self.expecting_invitation_input:
+                    prompt = "\nDo you accept the invitation? (Y/N): "
+                elif self.chatting:
+                    prompt = "\nEnter command (CHAT <message>, QUIT): "
                 else:
-                    print("Invalid command.")
+                    prompt = "\nEnter command (CONNECT <ip>, QUIT): "
+                print(prompt, end='', flush=True)
+                prompt_displayed = True
+
+            # Use select to check for input availability
+            ready, _, _ = select.select([sys.stdin], [], [], 0.1)
+            if ready:
+                user_input = sys.stdin.readline().strip()
+                prompt_displayed = False  # Redisplay prompt
+
+                if self.expecting_invitation_input:
+                    if user_input.lower() == 'y':
+                        self.send_command("ACCEPT")
+                        self.expecting_invitation_input = False
+                    elif user_input.lower() == 'n':
+                        self.send_command("REJECT")
+                        self.expecting_invitation_input = False
+                    else:
+                        print("Invalid input. Please enter 'Y' or 'N'.")
+                elif self.chatting:
+                    if user_input.startswith("CHAT "):
+                        _, message = user_input.split(" ", 1)
+                        self.send_chat_message(message)
+                    elif user_input == "QUIT":
+                        self.quit_chat()
+                        break
+                    else:
+                        print("Invalid command.")
+                else:
+                    if user_input.startswith("CONNECT "):
+                        _, remote_ip = user_input.split(" ", 1)
+                        self.connect_to_user(remote_ip)
+                    elif user_input == "QUIT":
+                        self.quit_chat()
+                        break
+                    else:
+                        print("Invalid command.")
             else:
-                command = input("Enter command (CONNECT <ip>, QUIT): ")
-                # User wants to connect to another user
-                if command.startswith("CONNECT"):
-                    _, remote_ip = command.split()
-                    self.connect_to_user(remote_ip)
-                # User wants to quit the chat
-                elif command == "QUIT":
-                    self.quit_chat()
-                    break
-                else:
-                    print("Invalid command.")
+                # No input; continue loop
+                time.sleep(0.1)
 
     # Handle the invitation message received through the Daemon
     def handle_invitation(self, message):
         print(message)  # Display the invitation message
         accept_invitation = None
         while accept_invitation not in ["Y", "y", "N", "n"]:
-            accept_invitation = input("Do you accept the invitation? (Y/N): ")
+            accept_invitation = input("\nDo you accept the invitation? (Y/N): ")
             if accept_invitation in ["Y", "y"]:
                 self.send_command("ACCEPT")
             elif accept_invitation in ["N", "n"]:
