@@ -207,7 +207,7 @@ class Daemon:
                 f"\n----------->\nDAEMON: Sending datagram {addr}:\n{Datagram(reply)}\n----------->\n")
             # Forward the chat message to the client
             self.client_conn.sendall(
-                ("CHAT " + message_received.payload.message).encode('ascii'))
+                ("CHAT " + message_received.header.user + " " + message_received.payload.message).encode('ascii'))
 
     # Start the daemon
 

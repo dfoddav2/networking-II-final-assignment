@@ -18,12 +18,8 @@ class Client:
         # TCP socket for Client to Daemon communication
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-        # Invitation details
+        # Invitation and chat details
         self.invitation = False
-        self.invitation_addr = None
-        self.invitation_user = None
-
-        # Chat details
         self.chatting = False
         self.chat_addr = None
         self.chat_user = None
@@ -62,7 +58,7 @@ class Client:
     def send_command(self, command):
         if self.connected:
             self.socket.sendall(command.encode('ascii'))
-            print(f"Sent command: {command}")
+            # print(f"Sent command: {command}")
         else:
             print("\n!! Not connected to daemon. Cannot send command.\n")
 
@@ -104,8 +100,9 @@ class Client:
                     # Handle the invitation
                     self.handle_invitation(message)
                 elif message.startswith("CHAT"):
+                    _, from_user, message_payload = message.split(" ", 2)
                     # Display the chat message
-                    print("\n" + message)
+                    print(f"\n\n<------\n{from_user}: {message_payload}\n<------")
                 elif "Chat connection established" in message:
                     print("\n" + message)
                     self.chatting = True
@@ -115,6 +112,7 @@ class Client:
                     print("\n" + message)
                     self.invitation = False
                     self.expecting_invitation_input = False
+                    self.chatting = False
                 else:
                     print("\nResponse from daemon:", message)
                 prompt_displayed = False  # Redisplay prompt
@@ -182,15 +180,16 @@ class Client:
 
     # Send an invitation to user with ip, through connection initiation message to the Daemon
     def connect_to_user(self, remote_ip):
+        print(f"\nWaiting for user at {remote_ip} to accept the invitation...")
         command = f"CONNECT {remote_ip}"
         self.send_command(command)
 
         # Set the invitation details
         self.invitation = True
-        self.invitation_addr = remote_ip
 
     # Send a message to the connected user through the Daemon
     def send_chat_message(self, message):
+        print(f"\n------>\n{self.username}: {message}\n------>")
         command = f"CHAT {message}"
         self.send_command(command)
 
@@ -199,6 +198,8 @@ class Client:
         # - is the client and thus the Daemon in a chat already
         command = "QUIT"
         self.send_command(command)
+        self.chatting = False
+        self.invitation = False
         # TODO: For now quitting also disconnects from the Daemon but is this truly what we want?
         self.socket.close()
         print("Disconnected from daemon")
