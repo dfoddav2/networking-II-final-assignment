@@ -180,6 +180,9 @@ class Client:
 
     # Send an invitation to user with ip, through connection initiation message to the Daemon
     def connect_to_user(self, remote_ip):
+        if remote_ip == self.host:
+            print("Cannot connect to self.")
+            return
         print(f"\nWaiting for user at {remote_ip} to accept the invitation...")
         command = f"CONNECT {remote_ip}"
         self.send_command(command)
