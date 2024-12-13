@@ -1,126 +1,168 @@
-# networking-II-final-assignment
+# David Fodor - networking-II-final-assignment
+
 This is the repository for the final assignment of the WS24/25 course of Networking II.
 
-## Implemented features
+SIMP (Simple IMC Messaging Protocol) is a simple messaging protocol for chat applications built on top of UDP. This protocol could in theory be used by a third-party to implement a chat program at the application layer level. The way the implementation works is quite simple, there are two main components:
+
+- Daemon
+- Client
+
+Clients are the interfaces users can utilize to message each other, which behind the scenes utilizes an always running Daemon to actually send the message to the desired destination. For example user A sending a message to user B would look as such: `(Client A) -> (Daemon A) -> (Daemon B) -> (Client B)`. Our messaging protocol defines what the communication between Daemons looks like. For more details on the protocol requirements, check out the [REQUIREMENTS.md](./REQUIREMENTS.md) file.
+
+## How to run
+
+My prefered method for running the application is by using 4 seperate terminals in VSC, because you can create split view terminals and see what is happening to the Daemon and to the Client at the same time.
+NOTE: This could be interesting, because on the Daemon I am logging out the sent and received datagrams in an easily readable format.
+
+What I would recommend is to start a terminal in the root directory, then split the terminal.
+
+In one of the split terminals write:
+`python3 simp_daemon.py 127.0.0.1`
+
+Then in the other one start the corresponding client:
+`python3 simp_daemon.py 127.0.0.1`
+
+This should connect the Client automatically to the Daemon running on the same host, give feedback about it and then prompt the user for their username.
+
+After this you may simulate a separate Daemon + Client combination, by doing the same as before, but with a different host, e.g. `127.0.0.2`.
+This will also prompt you for a username, after which you can use the following commands to interact with the system:
+
+`CONNECT <ip>` - To connect to a user on a different address, running the Client and the Daemon.
+`CHAT <message>` - Once connected to a remote user, you may send chat messages back and forth, messages can have spaces and can include any ASCII character.
+`QUIT` - At any given point, the Client may quit the application with this function.
+
+There is an additional phase where the user is prompted to accept chat a invitation, here you can simply answer with `y` or `n` and their capitalized versions.
+
+Now I will continue by describing the components of the application and the communication between them. (Plus some interesting challenges, and solutions I have found.)
+
+## Daemon to Daemon
+
+Daemon to Daemon communication is the focal point of this project, as it is what implements the SIMP protocol for communication.
+
+### Datagram header and message types
+
+As behind the scenes our protocol uses UDP sockets, I have decided to name the message units Datagrams. To make the messages more easily understandable for humans, I have implemented them using abstractions like Enums and Classes in [simp_classes.py](./simp_classes.py) and have additionally created a funcion named `message_to_datagram()` that with a given set of input paramaters creates the binary datagram. (Of course only given that the specific combination of inputs is valid.)
+
+As defined in the [REQUIREMENTS.md](./REQUIREMENTS.md), the datagram looks like the following:
+
+"Each datagram in the SIMP protocol is composed by a header and a payload. The header includes metainformation about the contents of the datagram itself, like type, sequence number, and other parameters. The payload is mainly used to carry the contents of the chat (the messages themselves). Note: all text (strings) will be encoded using plain ASCII characters.
+The header is composed of the following fields:"
+
+1. Type (1 byte): the type of the datagram as outlined before. Possible values:
+
+- 0x01 = control datagram.
+- 0x02 = chat datagram.
+
+2.  Operation (1 byte): indicates the type of operation of the datagram. Possible values:
+
+- If Type == 0x01 (control datagram):
+  - 0x01: ERR (some error condition occurred).
+  - 0x02: SYN (used in sliding window algorithm).
+  - 0x04: ACK (used in sliding window algorithm and as general acknowledgement).
+  - 0x08: FIN (used to close the connection).
+- If Type == 0x02 (chat datagram): field Operation takes the constant value 0x01.
+
+3. Sequence (1 byte): a sequence number that can take the values 0x00 or 0x01 used to identify resent or lost datagrams.
+4. User (32 bytes): user name encoded as an ASCII string.
+5. Length (4 bytes): length of the datagram payload in bytes.
+6. Payload: depending on the field Type:
+
+- If Type == 0x01 (control datagram) and Operation == 0x01 (error): a human-readable error message as an ASCII string.
+- If Type == 0x02 (chat datagram): the contents of the chat message to be sent.
 
 ### Connection establishment, three-way handshake
 
 The handshake is implemented as described in the requirements.
-In most cases we take it as a given that both users have connected to their respective daemons.
-
-There are 4 main cases that can happen and have been implemented:
+In the following cases we take it as a given that both users have connected to their respective daemons. (Specific edge cases are discussed in the next section about Stopping the connection.)
 
 1. Everything goes well
-    - User who wants to connect writes in the CLI: `CONNECT <ip>`
-    - This makes the Daemon send a `SYN` to the target
-    - Target Daemon receives `SYN`, forwards question to Client and waits for the Client's answer on what to do
-    - Client writes `y`, accepting the invite, which gets sent as a `ACCEPT` signal to the Daemon
-    - The target Daemon now creates the response message, which is a `SYNACK`, sends it, then waits for the `ACK` from the original Daemon
-    - The original Daemon responds with an `ACK` and sends a message to the client, informing that the connection has been made
+
+   - user who wants to connect writes in the CLI: `CONNECT <ip>`
+   - this makes the Daemon send a `SYN` to the target
+   - target Daemon receives `SYN`, forwards question to Client and waits for the Client's answer on what to do
+   - client writes `y`, accepting the invite, which gets sent as a `ACCEPT` signal to the Daemon
+   - the target Daemon now creates the response message, which is a `SYNACK`, sends it, then waits for the `ACK` from the original Daemon
+   - the original Daemon responds with an `ACK` and sends a message to the client, informing that the connection has been made
 
 2. Target rejects invitation
-    - (same as the first step)
-    - Client writes `n`, rejecting the invite, which gets sent as a `REJECT` signal to the Daemon
-    - The target Daemon now creates the response message which is `FINERR` and sends it to the original Daemon
-    - The original Daemon receives the `FINERR` and forwards its payload to the connected client, sends `ACK`
-    - The connected client prints the message of the payload and resets the invitation status
-
-3. Target Daemon is busy, already in chat with other user / waiting for an invitation to be answered
-
-
-4. Target Daemon is running, but no connected user
+   - (same as the first step)
+   - client writes `n`, rejecting the invite, which gets sent as a `REJECT` signal to the Daemon
+   - the target Daemon now creates the response message which is `FINERR` and sends it to the original Daemon
+   - the original Daemon receives the `FINERR` and forwards its payload to the connected client, sends `ACK` (as the requirements didn't state it had to be `FINACK`, I tried to follow them as closely as possible and simply using an `ACK`)
+   - the connected client prints the message of the payload and resets the invitation status
 
 ### Stopping the connection
 
-TODO: Right now we are just doing FIN -> ACK to stop a conversation, instead do: FIN -> FINACK -> ACK
+In this scenario as well we can separate different cases.
+
+1. The Client on one side disconnects deliberately using the `QUIT` function
+
+   - in this case the client sends a `QUIT` command to the Daemon, which then breaks the infinite loop of handling the user's inputs cleaning up the thread
+   - if a chat has been started between users (Daemons are connected), then the Daemon intitiates the the closure of the connection by sending a `FIN` datagram
+   - this prompts the other Daemon to respond with an `ACK` and notifies the connected Client that the chat has finished. (As outlined in the requirements.)
+
+2. The Client stops the connection abruptly
+
+   - meanwhile this behaviour is not generally expected from Daemons, Clients can abruptly end the connection, by for example xiting the application, instead of deliberately exiting with the `QUIT` function. (For example in our client's case pressing Ctrl + C)
+   - when a client disconnects this way, the same cleanup function happens on the Daemon's end as in the first case
+   - with the simple difference that we do not print on the Daemon that the Client quit deliberately
+
+3. Target Daemon is busy, already in chat with other user / waiting for an invitation to be answered
+
+   - this situation is handled via locked class wide flags and the threaded handling of incoming connections to the Daemon
+   - the Daemon, although it is busy, can receive the request to connect from a separate Daemon
+   - then given that the user is busy in one of the above mentioned ways, the Daemon sends a `FINERR` datagram with the corresponding `error payload`, which the clients can understand and print for the user, resetting the Daemon's invitation and connection status
+
+4. Target Daemon is running, but no connected user
+   - it could happen that we are trying to connect to someone who has the Daemon running, but is not actively connected to it with a Client
+   - in this case the Daemon similarly to the case before returns a `FINERR` with the payload `No client is connected to the daemon.`
+   - (Additional nice feature could be that we log these attempts and store them on the Daemon somewhere, then once the Client connects we push it to the Client's message queue to immedieately see.)
+
+### Handling lost Datagrams, retransmissions and ACKs, Stop-and-wait
+
+TODO: Implement this mechanism
+
+## Client to Daemon
+
+The Client to Daemon communication was left up to us to implement, so I used the simples solutions I could think of, which is simply using a TCP connection between them and simply sending ASCII encoded and decoded string commands. These commands have already been introduced in the [How to run section](#how-to-run) of this document. Namely these are: `CONNECT <ip>`, `CHAT <message>`, `QUIT`.
+
+Once these commands are sent to the Daemon, the Daemon conditionally acts based on the input.
+
+### Message handling, queueing and select
+
+Messages and input on the Client side are all handled via a `message_queue` and a fallback to requesting input from the user. You can see it in the `handle_user_input()` function of the Client class. Essentially, if there is any message in the queue, we print it (or in case of an invitation for example also handle the invitation) until there are no messages left. Once there are no messages left we wait for the input of the user on what to do, based on the current situation. (Either (`CONNCET <ip>` and `QUIT`), or (`CHAT <message>` and `QUIT`))
+
+One thing that made this CLI approach significantly harder is the fact that `input()` is a blocking statement, so I had to find a workaround to waiting for input in a non-blocking way, allowing messages to come through.
+You can read more about the need and oddities of the `select` library in the [Challenges section](#challenges) at the end of the document.
+
+### Connecting
+
+Connecting to the Daemon happens automatically on start based on the host ip given when running the command `python3 simp_daemon.py 127.0.0.1`. There are three possible scenarios here:
+
+1. There is a Daemon running already that is waiting for a client connection
+   - the TCP connection simply goes through and we are given feedback about it on the logs for both the Client and Daemon
+2. There is no Daemon running at the given host ip
+   - the Client expects this via `ConnectionRefusedError`, logs that connection could not be made and exits
+3. There is a Daemon running, but it is already occupied by a Client
+   - In this case the Client trying to connect gets handled by a separate thread that notices based on the class flags, that it is occupied
+   - Sends back the message `** DAEMON STATUS:  Another client is already connected.  **`, closes the connection and the Client exits
+
+### Disconnecting
+
+As I have already described it in points 2 and 3 of the [Stopping the connection section of Daemon to Daemon](#stopping-the-connection), the user can quit at any given time using the `QUIT` command, but even if the user quits some other way, like a KeyboardInterrupt, the Daemon notices it and handles it accordingly.
+
+> [!NOTE]
+> The requirements stated that `The user will always have the option to quit (disconnect from the daemon) by pressing the key "q".`, I believe that the current solution suffices this description, but it would definitely be nice if I had also implemented a soft quit too, which simply disconnects from just the chat and not the whole application.
+>
+> This way to start a new chat, the user has to rerurn the Client.
 
 ## Challenges
 
 Since the client was created as a simple CLI tool, always waiting for an answer from the user using `input()` would keep blocking the incoming messages from other threads. This is why I had to use the `select` library which allows for the manipulation of `stdin`.
 
 Shortcomings:
+
 - When the user has already written something to the `stdin` and a message comes in, that already written message is nulled, this could be annoying in a real setting.
-    - This could be solved with some mechanism that also reads in the `stdin` before resetting it, then populating the new one with the old message, but I think this is outside of the scope of the project.
+  - This could be solved with some mechanism that also reads in the `stdin` before resetting it, then populating the new one with the old message, but I think this is outside of the scope of the project.
 - The `select` library only operates on `stdin` on Linux systems, so the app won't work on Windows.
-    - There is apparently a `msvcrt` module that can do the same for Windows systems, but as system agnosticity is not a requirement, I deemed this too was outside the scope of implementation.
-
-## Requirements
-
-In order to put the concepts learned in the course into practice, the programming project aims at implementing a simple messaging protocol for chat applications built on top of UDP. This protocol (that we will call Simple IMC Messaging Protocol, or SIMP for short) could in theory be used by a third-party to implement a chat program at the application layer level.
-
-### SIMP Specification
-
-SIMP represents a lightweight protocol. As such, it won’t need all connection-oriented functionalities provided by TCP. Therefore, it was decided to implement it on top of UDP instead. However, SIMP needs some functionality for ensuring that messages are delivered – otherwise, user messages could get lost on its way and never be recovered. The protocol should operate in the following way: first, any user may contact another user for starting a chat. Users are identified by their IP address and port number (of course, every user needs to run a SIMP implementation in order to get contacted in the first place). The user can accept or decline the invitation to chat. After accepting the invitation, both users can send messages to each other until one of them closes the connection. If a user already in a chat gets an invitation to chat from another user, that invitation will be automatically rejected by sending an error message (user is busy in another chat).
-
-### Types of datagrams
-
-More specifically, the SIMP protocol is defined by the following datagram types:
-- Control datagram: these are used to establish and terminate a connection or resend datagrams after a timeout has occurred. These datagrams are identified by the Type field in the header (see next section) with a value of 0x01.
-- Chat datagram: used for implementing the conversation itself between the users. These datagrams are identified by the Type field in the header (see next section) with a value of 0x02.
-
-### Header format
-
-Each datagram in the SIMP protocol is composed by a header and a payload. The header includes metainformation about the contents of the datagram itself, like type, sequence number, and other parameters. The payload is mainly used to carry the contents of the chat (the messages themselves). Note: all text (strings) will be encoded using plain ASCII characters.
-The header is composed of the following fields:
-
-1. Type (1 byte): the type of the datagram as outlined before. Possible values:
-- 0x01 = control datagram.
-- 0x02 = chat datagram.
-2.  Operation (1 byte): indicates the type of operation of the datagram. Possible values:
-- If Type == 0x01 (control datagram):
-    - 0x01: ERR (some error condition occurred).
-    - 0x02: SYN (used in sliding window algorithm).
-    - 0x04: ACK (used in sliding window algorithm and as general acknowledgement).
-    - 0x08: FIN (used to close the connection).
-- If Type == 0x02 (chat datagram): field Operation takes the constant value 0x01.
-3. Sequence (1 byte): a sequence number that can take the values 0x00 or 0x01 used to identify resent or lost datagrams.
-4. User (32 bytes): user name encoded as an ASCII string.
-5. Length (4 bytes): length of the datagram payload in bytes.
-6. Payload: depending on the field Type:
-- If Type == 0x01 (control datagram) and Operation == 0x01 (error): a human-readable error message as an ASCII string.
-- If Type == 0x02 (chat datagram): the contents of the chat message to be sent.
-
-### Operation
-
-The protocol begins by establishing a connection using the three-way handshake algorithm as seen in class:
-1.  Sender begins by transmitting a SYN control datagram to the destination.
-2. Receiver replies with another control datagram with a combination SYN + ACK (i.e. the result of an bitwise OR from the values of SYN and ACK).
-3. Sender replies with ACK.
-
-If the receiver wants to decline the connection, Step 2 is replaced by responding with a FIN control datagram. After this connection establishment phase, sender and receiver can begin with their conversation (type of datagram: chat). The sender of a given datagram will use the stop-and-wait strategy to wait until that datagram is acknowledged from the receiver. In case it does not receive a reply after a specified amount of time (default: 5 seconds), it will retransmit the datagram with the same sequence number. After the ACK comes, it will transmit the next datagram with the next sequence number (0 or 1). SYN datagrams from other users will be declined by sending an ERR control datagram with the error message: "User already in another chat" and a FIN control datagram. If a participant wants to leave, it will send a FIN datagram to the other user, who will send an acknowledgement (ACK) before leaving the conversation.
-
-### Implementation
-
-A SIMP implementation is composed of a **daemon** and a **client**:
-- The daemon is a program that runs in the background and waits for incoming connections. Before being able to run a chat, every user needs to have the SIMP daemon up and running. The daemon will be started using the IP address of the server as a command line parameter. Communication using the SIMP protocol as described previously always works from daemon to daemon. The port number used for daemon-to-daemon communication is standarized and always set to 7777. The port number used for communication between client and daemon is always 7778.
-- The client is a text-based program that is used by the end-users to chat. It will accept the IP address of the daemon as a command line parameter and, if the daemon is correctly running, it will ask the user for a username. Then, one of the following conditions will hold:
-    1. The daemon responds that a conversation request is pending. In this case, the client will show the IP address and the username of the user requesting the chat and will ask the user to decide whether to accept or decline the chat request (IP address and username of the remote user will be provided by the daemon to the client).
-    2. If there is no chat request pending, the user will be asked if they want to start a new chat or wait for chat requests. In the first case, the client will request the IP address of the user to send the chat request to. In the latter case, the client will enter an idle state where it waits for incoming chat requests. As soon as a chat request arrives, the client will proceed as in case 1.
-    3. The user will always have the option to quit (disconnect from the daemon) by pressing the key "q".
-
-#### Remark 1
-
-Note that the client and the daemon are separate programs that run independently. Therefore, you will need to implement your own communication protocol between the client and the daemon that implements the following operations: connect (to establish a connection between client and daemon), chat (to send chat messages to the daemon) and quit (disconnect from the daemon) operations
-
-#### Remark 2
-
-Remember that in this protocol the chat operation is synchronous. Once a chat message is sent, the sender waits for a reply from the other user indefinitely.
-
-### Submission and details
-
-This project will be completed in groups of two people and delivered on 19/12/2024 23:59 at the latest. All projects will be submitted via MS-Teams as a ZIP-file containing:
-1. Implementation in Python:
-    - simp_daemon.py: implementation of the daemon as described previously.
-    - simp_client.py: implementation of the client as described previously.
-    - requirements.txt: requirements file that can be used with pip to install all dependencies.
-    - Any other auxiliary files/modules needed.
-2. Technical documentation.
-
-#### Assessment
-
-The assignment is worth 50 points that will be given using the following criteria:
-- Correct implementation of the message (header + payload) : 15 points.
-- Correct implementation of three-way handshake: 10 points.
-- Correct implementation of stop-and-wait: 10 points.
-- Correct implementation of the communication between daemon and client: 10 points.
-- Clean code and clear documentation: 5 points.
+  - There is apparently a `msvcrt` module that can do the same for Windows systems, but as system agnosticity is not a requirement, I deemed this too as outside the scope of implementation.
