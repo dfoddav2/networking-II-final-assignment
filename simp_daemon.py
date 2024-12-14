@@ -73,6 +73,14 @@ class Daemon:
         # TODO: Handle timeout
         return False
 
+    # Abstraction for sending an ACK
+    def send_ack(self, addr):
+        reply_ack = message_to_datagram(
+            MessageType.CONTROL, OperationType.ACK, self.next_sequence_number, self.username, "")
+        self.daemon_socket.sendto(reply_ack, addr)
+        print(
+            f"\n----------->\nDAEMON: Sending ACK {addr}:\n{Datagram(reply_ack)}\n----------->\n")
+
     # Handle an incoming datagram
     def handle_datagram(self, message_received, addr):
         # TODO: Handle and validate the next sequence number, but as a class variable
@@ -139,30 +147,18 @@ class Daemon:
                 self.is_in_chat = True  # NOTE: This puts the initiator into the chat
                 self.remote_addr = addr
                 # Send ACK to the other user
-                reply_ack = message_to_datagram(
-                    MessageType.CONTROL, OperationType.ACK, self.next_sequence_number, self.username, "")
-                self.daemon_socket.sendto(reply_ack, addr)
-                print(
-                    f"\n----------->\nDAEMON: Sending ACK {addr}:\n{Datagram(reply_ack)}\n----------->\n")
+                self.send_ack(addr)
             elif message_received.header.operation == OperationType.ERR:
                 # TODO: Maybe even send to the client in the future?
                 # Print error message
                 print(
                     f"\n!! Received an error message: {message_received.payload.message} !!\n")
                 # Send ACK about the ERR
-                reply_ack = message_to_datagram(
-                    MessageType.CONTROL, OperationType.ACK, self.next_sequence_number, self.username, "")
-                self.daemon_socket.sendto(reply_ack, addr)
-                print(
-                    f"\n----------->\nDAEMON: Sending ACK {addr}:\n{Datagram(reply_ack)}\n----------->\n")
+                self.send_ack(addr)
                 pass
             # FIN: Other client wants to end the chat
             elif message_received.header.operation == OperationType.FIN:
-                reply = message_to_datagram(
-                    MessageType.CONTROL, OperationType.ACK, self.next_sequence_number, self.username, "")
-                self.daemon_socket.sendto(reply, addr)
-                print(
-                    f"\n----------->\nDAEMON: Sending ACK {addr}:\n{Datagram(reply)}\n----------->\n")
+                self.send_ack(addr)
                 self.client_conn.sendall(
                     f"!! User {message_received.header.user} ended the chat. !!".encode('ascii'))
                 self.is_in_chat = False
@@ -174,11 +170,7 @@ class Daemon:
                 self.client_conn.sendall(
                     f"Connection could not be established: {message_received.payload.message}.".encode('ascii'))
                 # Send ACK
-                reply = message_to_datagram(
-                    MessageType.CONTROL, OperationType.ACK, self.next_sequence_number, self.username, "")
-                self.daemon_socket.sendto(reply, addr)
-                print(
-                    f"\n----------->\nDAEMON: Sending ACK {addr}:\n{Datagram(reply)}\n----------->\n")
+                self.send_ack(addr)
                 self.is_in_chat = False
                 self.remote_addr = None
             # ACK: The other client received the message # TODO: Now the incoming ACK should be waited for at the send with retransmit
@@ -198,11 +190,7 @@ class Daemon:
             # print(
             #     f"\n**Received chat message from {message_received.header.user}, forwarding to client...\n")
             # ACK the chat message
-            reply = message_to_datagram(
-                MessageType.CONTROL, OperationType.ACK, self.next_sequence_number, self.username, "")
-            self.daemon_socket.sendto(reply, addr)
-            print(
-                f"\n----------->\nDAEMON: Sending ACK {addr}:\n{Datagram(reply)}\n----------->\n")
+            self.send_ack(addr)
             # Forward the chat message to the client
             self.client_conn.sendall(
                 ("CHAT " + message_received.header.user + " " + message_received.payload.message).encode('ascii'))
@@ -302,7 +290,8 @@ class Daemon:
                         if self.is_in_chat:
                             datagram = message_to_datagram(
                                 MessageType.CHAT, OperationType.ERR, 0x00, self.username, message)  # TODO: Sequence number
-                            self.send_with_retransmission(datagram, self.remote_addr)
+                            self.send_with_retransmission(
+                                datagram, self.remote_addr)
                         else:
                             print("Client is not in chat, cannot send message.")
                             self.client_conn.sendall(
@@ -328,9 +317,7 @@ class Daemon:
                     MessageType.CONTROL, OperationType.FIN, 0x00, self.username, "")  # TODO: Sequence number
                 # self.send_with_retransmission(datagram, self.remote_addr)
                 self.send_with_retransmission(datagram, self.remote_addr)
-                # self.daemon_socket.sendto(datagram, self.remote_addr) # TODO: 
-                # print(
-                #     f"\n----------->\nDAEMON: Sending datagram {self.remote_addr}:\n{Datagram(datagram)}\n----------->\n")
+                # Set flags
                 self.is_in_chat = False
                 self.remote_addr = None
                 self.client_conn.close()
@@ -345,7 +332,6 @@ class Daemon:
             # Send SYNACK to the remote daemon
             datagram = message_to_datagram(
                 MessageType.CONTROL, OperationType.SYNACK, 0x01, self.username, "")
-            # self.daemon_socket.sendto(datagram, self.inviting_addr)
             success = self.send_with_retransmission(
                 datagram, self.inviting_addr)
             if success:
