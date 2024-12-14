@@ -76,8 +76,7 @@ The handshake is implemented as described in the requirements.
 In the following cases we take it as a given that both users have connected to their respective daemons. (Specific edge cases are discussed in the next section about Stopping the connection.)
 
 1. Everything goes well
-
-   - user who wants to connect writes in the CLI: `CONNECT <ip>`
+   - user who wants to connect writes in the CLI: `CONNECT <ip>` (of course except their own, this edge case is also handled)
    - this makes the Daemon send a `SYN` to the target
    - target Daemon receives `SYN`, forwards question to Client and waits for the Client's answer on what to do
    - client writes `y`, accepting the invite, which gets sent as a `ACCEPT` signal to the Daemon
@@ -96,19 +95,16 @@ In the following cases we take it as a given that both users have connected to t
 In this scenario as well we can separate different cases.
 
 1. The Client on one side disconnects deliberately using the `QUIT` function
-
    - in this case the client sends a `QUIT` command to the Daemon, which then breaks the infinite loop of handling the user's inputs cleaning up the thread
    - if a chat has been started between users (Daemons are connected), then the Daemon intitiates the the closure of the connection by sending a `FIN` datagram
    - this prompts the other Daemon to respond with an `ACK` and notifies the connected Client that the chat has finished. (As outlined in the requirements.)
 
 2. The Client stops the connection abruptly
-
    - meanwhile this behaviour is not generally expected from Daemons, Clients can abruptly end the connection, by for example xiting the application, instead of deliberately exiting with the `QUIT` function. (For example in our client's case pressing Ctrl + C)
    - when a client disconnects this way, the same cleanup function happens on the Daemon's end as in the first case
    - with the simple difference that we do not print on the Daemon that the Client quit deliberately
 
 3. Target Daemon is busy, already in chat with other user / waiting for an invitation to be answered
-
    - this situation is handled via locked class wide flags and the threaded handling of incoming connections to the Daemon
    - the Daemon, although it is busy, can receive the request to connect from a separate Daemon
    - then given that the user is busy in one of the above mentioned ways, the Daemon sends a `FINERR` datagram with the corresponding `error payload`, which the clients can understand and print for the user, resetting the Daemon's invitation and connection status
@@ -135,7 +131,7 @@ Messages and input on the Client side are all handled via a `message_queue` and 
 One thing that made this CLI approach significantly harder is the fact that `input()` is a blocking statement, so I had to find a workaround to waiting for input in a non-blocking way, allowing messages to come through.
 You can read more about the need and oddities of the `select` library in the [Challenges section](#challenges) at the end of the document.
 
-### Connecting
+### Connecting to Daemon
 
 Connecting to the Daemon happens automatically on start based on the host ip given when running the command `python3 simp_daemon.py 127.0.0.1`. There are three possible scenarios here:
 
@@ -147,7 +143,7 @@ Connecting to the Daemon happens automatically on start based on the host ip giv
    - In this case the Client trying to connect gets handled by a separate thread that notices based on the class flags, that it is occupied
    - Sends back the message `** DAEMON STATUS:  Another client is already connected.  **`, closes the connection and the Client exits
 
-### Disconnecting
+### Disconnecting from Dameon
 
 As I have already described it in points 2 and 3 of the [Stopping the connection section of Daemon to Daemon](#stopping-the-connection), the user can quit at any given time using the `QUIT` command, but even if the user quits some other way, like a KeyboardInterrupt, the Daemon notices it and handles it accordingly.
 

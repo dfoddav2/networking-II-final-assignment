@@ -88,6 +88,8 @@ class Client:
         if not self.connected:
             print("Not connected to daemon. Exiting.")
             return
+        
+        
 
         self.expecting_invitation_input = False
         prompt_displayed = False
