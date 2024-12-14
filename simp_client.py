@@ -115,6 +115,11 @@ class Client:
                     self.invitation = False
                     self.expecting_invitation_input = False
                     self.chatting = False
+                elif "wants to end chat" in message:
+                    print("\n" + message)
+                    self.chatting = False
+                    self.invitation = False
+                    self.expecting_invitation_input = False
                 else:
                     print("\nResponse from daemon:", message)
                 prompt_displayed = False  # Redisplay prompt
@@ -123,6 +128,8 @@ class Client:
             if not prompt_displayed:
                 if self.expecting_invitation_input:
                     prompt = "\nDo you accept the invitation? (Y/N): "
+                elif self.invitation:
+                    prompt = ""
                 elif self.chatting:
                     prompt = "\nEnter command (CHAT <message>, QUIT): "
                 else:
@@ -145,6 +152,9 @@ class Client:
                         self.expecting_invitation_input = False
                     else:
                         print("Invalid input. Please enter 'Y' or 'N'.")
+                elif self.invitation:
+                    # Do nothing; the invitation will be handled by the daemon
+                    pass
                 elif self.chatting:
                     if user_input.startswith("CHAT "):
                         _, message = user_input.split(" ", 1)
