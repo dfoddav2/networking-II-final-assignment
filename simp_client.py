@@ -115,7 +115,7 @@ class Client:
                     self.invitation = False
                     self.expecting_invitation_input = False
                     self.chatting = False
-                elif "wants to end chat" in message:
+                elif "ended the chat" in message:
                     print("\n" + message)
                     self.chatting = False
                     self.invitation = False
