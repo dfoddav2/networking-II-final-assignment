@@ -41,7 +41,7 @@ Daemon to Daemon communication is the focal point of this project, as it is what
 
 ### Datagram header and message types
 
-As behind the scenes our protocol uses UDP sockets, I have decided to name the message units Datagrams. To make the messages more easily understandable for humans, I have implemented them using abstractions like Enums and Classes in [simp_classes.py](./simp_classes.py) and have additionally created a funcion named `message_to_datagram()` that with a given set of input paramaters creates the binary datagram. (Of course only given that the specific combination of inputs is valid.)
+As behind the scenes our protocol uses UDP sockets, I have decided to name the message units Datagrams. To make the messages more easily understandable for humans, I have implemented them using abstractions like Enums and Classes in [simp_classes.py](./simp_classes.py) and have additionally created a funcion named `message_to_datagram()` that with a given set of input paramaters creates the binary datagram. This binary datagram then can easily be parsed by turning it into a `Datagram` object, by `Datagram(example_message_to_datagram)` (Of course only given that the specific combination of inputs is valid.)
 
 As defined in the [REQUIREMENTS.md](./REQUIREMENTS.md), the datagram looks like the following:
 
@@ -116,7 +116,44 @@ In this scenario as well we can separate different cases.
 
 ### Handling lost Datagrams, retransmissions and ACKs, Stop-and-wait
 
-TODO: Implement this mechanism
+Retransmission of datagrams is done via the main sending function, that is aptly named `send_with_retransmission`. It takes in the variables: `datagram` - binary message to send, `addr` - who to send to, `skip_sequence_check=False` - an optional setting that skips the sequence number validation. (Useful for communicating with third parties, e.g. rejecting a third party trying to connect.) This function implements the stop-and-wait functionality by waiting for an `ACK` for each of the packets sent via this function.
+
+It also has some variables set inside of it that change how it functions, feel free to change these to see how it behaves:
+
+```py
+max_retries = 3            # how many max retransmits we can have before finally timing out
+timeout = 5                # seconds we wait for the ACK before retransmit
+retries = 0                # this is just a flag we iterate on to see < max_retries
+drop_probability = 0.25    # the chance of a packet "dropping" (not being sent)
+```
+
+If the timeout does happen after all, e.g. for all 3 tries the message was dropped, the Daemons get disconnected and this show on their client's end too. (Of course it may still happen that the `FINERR` sent out to the other Daemon also gets lost. In this case the other Daemon would only get disconnected once it tries to send something but doesn't get the ACK back.)
+
+> [!NOTE]
+> The very start of the handshake, `SYN` is sent plainly via the UDP socket method to make life easier. That one could also of course use `send_with_retransmission` with some adjustment and additonal flags, but for this simplified case, this suffices I believe.
+
+### Sequence numbers
+
+The sequence numbers are utilized in a way where for each communication block the same sequence number is being used. E.g. for the whole of the three-way handshake the default starter sequence number is used: `SYN (0x00)` -> `SYNACK (0x00)` -> `ACK (0x00)`, or similarly any chat message may go like this: `CHAT ERR (0x01/0x00) -> ACK (0x01/0x00)`.
+
+They are keepen track of via these class variables:
+
+```py
+self.send_sequence_number = 0x00       # For sending datagrams
+self.expected_sequence_number = 0x00   # For receiving datagrams
+```
+
+Essentially:
+- Whenever we are sending a response to an action like an `ACK` or `SYNACK`, we use the sequence number of the received message to to show that this answer belongs to the block.
+- Whenever a block ends in one way or another we iterate on both sequence numbers, switching back and forth between `0x00` and `0x01`, this happens for both of the connected Daemons.
+- When checking for correctness we test the equivalence of sequence numbers
+   -  -> This happens at the start of the `handle_datagram` which is the main function being ran in loop, when we receive a message.
+   - `ack.header.sequence_number == sequence_number` -> And the checking of the reply matching happens in the `send_with_retransmit` as the stop-and-wait can only end if we have received the ACK type datagram with the appropriat sequence number.
+- When a chat ends in one way or another, we reset to the default starting point for the sequence numbers being `0x00`.
+- If the datagram fails the sequence number check we just ignore that datagram, as we weren't given any specific tasks to do with them in the requirements.
+
+Extra considerations:
+- I have made sure that a third party tring to connect doesn't affect and mess up our synchronized sequence number exchange with a different user, so these external requests do not prompt a switch of the class wide sequence numbers and aren't being tested for sequence number correctness. This is what the `skip_sequence_check` attribute is for.
 
 ## Client to Daemon
 

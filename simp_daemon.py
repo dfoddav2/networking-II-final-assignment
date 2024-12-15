@@ -17,7 +17,6 @@ class Daemon:
         # Create a UDP socket - for DAEMON to DAEMON communication
         self.daemon_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.daemon_socket.bind((self.host, 7777))
-        # self.next_sequence_number = 0x00
         self.send_sequence_number = 0x00  # For sending datagrams
         self.expected_sequence_number = 0x00  # For receiving datagrams
 
