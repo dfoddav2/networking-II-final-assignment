@@ -88,8 +88,6 @@ class Client:
         if not self.connected:
             print("Not connected to daemon. Exiting.")
             return
-        
-        
 
         self.expecting_invitation_input = False
         prompt_displayed = False
@@ -104,22 +102,18 @@ class Client:
                 elif message.startswith("CHAT"):
                     _, from_user, message_payload = message.split(" ", 2)
                     # Display the chat message
-                    print(f"\n\n<------\n{from_user}: {message_payload}\n<------")
+                    print(
+                        f"\n\n<------\n{from_user}: {message_payload}\n<------")
                 elif "Chat connection established" in message:
                     print("\n" + message)
                     self.chatting = True
                     self.invitation = False
                     self.expecting_invitation_input = False
-                elif "rejected" in message or "already in chat" in message or "No client is connected" in message:
+                elif "rejected" in message or "already in chat" in message or "No client is connected" in message or "ended the chat" in message or "timed out" in message:
                     print("\n" + message)
                     self.invitation = False
                     self.expecting_invitation_input = False
                     self.chatting = False
-                elif "ended the chat" in message:
-                    print("\n" + message)
-                    self.chatting = False
-                    self.invitation = False
-                    self.expecting_invitation_input = False
                 else:
                     print("\nResponse from daemon:", message)
                 prompt_displayed = False  # Redisplay prompt
@@ -182,7 +176,8 @@ class Client:
         print(message)  # Display the invitation message
         accept_invitation = None
         while accept_invitation not in ["Y", "y", "N", "n"]:
-            accept_invitation = input("\nDo you accept the invitation? (Y/N): ")
+            accept_invitation = input(
+                "\nDo you accept the invitation? (Y/N): ")
             if accept_invitation in ["Y", "y"]:
                 self.send_command("ACCEPT")
             elif accept_invitation in ["N", "n"]:

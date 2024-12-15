@@ -2,6 +2,7 @@ import socket
 import threading
 import sys
 import time
+import random
 
 from simp_classes import Datagram, MessageType, OperationType, message_to_datagram
 
@@ -43,10 +44,13 @@ class Daemon:
         max_retries = 3
         timeout = 5  # seconds
         retries = 0
+        drop_probability = 0.3
         sequence_number = Datagram(datagram).header.sequence_number
 
         while retries < max_retries:
-            self.daemon_socket.sendto(datagram, addr)
+            # Simulate packet loss
+            if random.random() > drop_probability:
+                self.daemon_socket.sendto(datagram, addr)
             print(
                 f"\n----------->\nDAEMON (Attempt #{retries + 1}): Sending datagram {addr}:\n{Datagram(datagram)}\n----------->\n")
             start_time = time.time()
@@ -70,8 +74,27 @@ class Daemon:
 
         self.daemon_socket.settimeout(None)
         print(f"Failed to receive ACK after {max_retries} attempts.")
-        # TODO: Handle timeout
-        return False
+        # Handle timeout
+        #  - Send FINERR to the other user
+        #  - Inform the client
+        print(
+            f"\n** Connection timed out, sending FINERR to {self.inviting_addr} **\n")
+        
+        # Send FINERR to the remote daemon - trying to end the chat for them too
+        err_payload = "Connection timed out, exiting chat... :("
+        reply = message_to_datagram(
+            MessageType.CONTROL, OperationType.FINERR, 0x01, self.username, err_payload)
+        if self.inviting_addr:
+            self.send_with_retransmission(reply, self.inviting_addr)
+            print(f"\n**Sent FINERR to {self.inviting_addr}**\n")
+        else:
+            self.send_with_retransmission(reply, self.remote_addr)
+            print(f"\n**Sent FINERR to {self.remote_addr}**\n")
+        
+        # Inform the client and reset the chat details
+        self.is_in_chat = False
+        self.remote_addr = None
+        self.client_conn.sendall("Connection timed out, exiting chat... :(".encode('ascii'))
 
     # Abstraction for sending an ACK
     def send_ack(self, addr):
@@ -173,12 +196,12 @@ class Daemon:
                 self.send_ack(addr)
                 self.is_in_chat = False
                 self.remote_addr = None
-            # ACK: The other client received the message # TODO: Now the incoming ACK should be waited for at the send with retransmit
+            # ACK: The other client received the message
             elif message_received.header.operation == OperationType.ACK:
                 # Conditionally handle the ACK if we are waiting for the ACK of a SYNACK
                 if self.pending_invitation:
                     print(
-                        f"\n** Connection estavlishment ACK by: {message_received.header.user} **\n")
+                        f"\n** Connection establishment ACK by: {message_received.header.user} **\n")
                     self.client_conn.sendall(
                         f"Chat connection established with {message_received.header.user}.".encode('ascii'))
                     self.pending_invitation = False
@@ -280,13 +303,11 @@ class Daemon:
                             f"\n----------->\nDAEMON: Sending datagram {self.remote_addr}:\n{Datagram(datagram)}\n----------->\n")
                         pass
                     elif command.startswith("CHAT"):
-                        # TODO: Handle client wanting to send a chat message
+                        # Handle client wanting to send a chat message
                         # - get the message from the command
                         # - IF not in chat, send an ERR message to the client
                         # - ELSE send a CHAT message to the other user
-
                         message = command.split(" ", 1)[1]
-
                         if self.is_in_chat:
                             datagram = message_to_datagram(
                                 MessageType.CHAT, OperationType.ERR, 0x00, self.username, message)  # TODO: Sequence number
@@ -350,9 +371,6 @@ class Daemon:
                 self.pending_invitation = False
                 self.inviting_addr = None
                 self.inviting_user = None
-            else:
-                # TODO: Handle timeouts
-                print("Connection timed out... :(")
 
         else:
             self.client_conn.sendall(
@@ -360,9 +378,8 @@ class Daemon:
 
     def handle_reject(self):
         if self.pending_invitation and self.inviting_addr:
-            # Send ERR and FIN to the remote daemon
+            # Send FINERR to the remote daemon
             err_payload = "Chat invitation rejected."
-            # TODO: Send ERR + FIN to target daemon in one go?
             reply = message_to_datagram(
                 MessageType.CONTROL, OperationType.FINERR, 0x01, self.username, err_payload)
             self.send_with_retransmission(reply, self.inviting_addr)
