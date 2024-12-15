@@ -76,14 +76,6 @@ class Client:
             # - If there is a message in the queue, print it and handle it
             # - If there is no message in the queue, ask for user input as usual
 
-            # TODO: Somehow we need to handle the fact that there is an ongoing input waiting for the user
-            # - this blocks operation so we need to skip the input and handle the message
-            # - we can do this by writing to stdin maybe?
-
-    # Handle user input:
-    # Logic is:
-    # - If there is a message in the queue, print it and handle it
-    # - If there is no message in the queue, ask for user input as usual
     def handle_user_input(self):
         if not self.connected:
             print("Not connected to daemon. Exiting.")
@@ -109,7 +101,7 @@ class Client:
                     self.chatting = True
                     self.invitation = False
                     self.expecting_invitation_input = False
-                elif "rejected" in message or "already in chat" in message or "No client is connected" in message or "ended the chat" in message or "timed out" in message:
+                elif "invitation rejected" in message or "already in chat" in message or "No client is connected" in message or "ended the chat" in message or "timed out" in message:
                     print("\n" + message)
                     self.invitation = False
                     self.expecting_invitation_input = False
@@ -204,7 +196,7 @@ class Client:
         self.send_command(command)
 
     def quit_chat(self):
-        # TODO: Here make checks:
+        # TODO: Could do checks in the future to ensure that the user
         # - is the client and thus the Daemon in a chat already
         command = "QUIT"
         self.send_command(command)
