@@ -9,6 +9,23 @@ SIMP (Simple IMC Messaging Protocol) is a simple messaging protocol for chat app
 
 Clients are the interfaces users can utilize to message each other, which behind the scenes utilizes an always running Daemon to actually send the message to the desired destination. For example user A sending a message to user B would look as such: `(Client A) -> (Daemon A) -> (Daemon B) -> (Client B)`. Our messaging protocol defines what the communication between Daemons looks like. For more details on the protocol requirements, check out the [REQUIREMENTS.md](./REQUIREMENTS.md) file.
 
+# Table of Contents
+
+1. [Introduction](#introduction)
+2. [How to Run](#how-to-run)
+3. [Components](#components)
+   - [Daemon to Daemon](#daemon-to-daemon)
+     - [Datagram Header and Message Types](#datagram-header-and-message-types)
+     - [Connection Establishment, Three-Way Handshake](#connection-establishment-three-way-handshake)
+     - [Stopping the Connection](#stopping-the-connection)
+     - [Handling Lost Datagrams, Retransmissions, and ACKs, Stop-and-Wait](#handling-lost-datagrams-retransmissions-and-acks-stop-and-wait)
+     - [Sequence Numbers](#sequence-numbers)
+   - [Client to Daemon](#client-to-daemon)
+     - [Message Handling, Queueing, and Select](#message-handling-queueing-and-select)
+     - [Connecting to Daemon](#connecting-to-daemon)
+     - [Disconnecting from Daemon](#disconnecting-from-daemon)
+4. [Challenges](#challenges)
+
 ## How to run
 
 My prefered method for running the application is by using 4 seperate terminals in VSC, because you can create split view terminals and see what is happening to the Daemon and to the Client at the same time.
@@ -76,6 +93,7 @@ The handshake is implemented as described in the requirements.
 In the following cases we take it as a given that both users have connected to their respective daemons. (Specific edge cases are discussed in the next section about Stopping the connection.)
 
 1. Everything goes well
+
    - user who wants to connect writes in the CLI: `CONNECT <ip>` (of course except their own, this edge case is also handled)
    - this makes the Daemon send a `SYN` to the target
    - target Daemon receives `SYN`, forwards question to Client and waits for the Client's answer on what to do
@@ -95,16 +113,19 @@ In the following cases we take it as a given that both users have connected to t
 In this scenario as well we can separate different cases.
 
 1. The Client on one side disconnects deliberately using the `QUIT` function
+
    - in this case the client sends a `QUIT` command to the Daemon, which then breaks the infinite loop of handling the user's inputs cleaning up the thread
    - if a chat has been started between users (Daemons are connected), then the Daemon intitiates the the closure of the connection by sending a `FIN` datagram
    - this prompts the other Daemon to respond with an `ACK` and notifies the connected Client that the chat has finished. (As outlined in the requirements.)
 
 2. The Client stops the connection abruptly
+
    - meanwhile this behaviour is not generally expected from Daemons, Clients can abruptly end the connection, by for example xiting the application, instead of deliberately exiting with the `QUIT` function. (For example in our client's case pressing Ctrl + C)
    - when a client disconnects this way, the same cleanup function happens on the Daemon's end as in the first case
    - with the simple difference that we do not print on the Daemon that the Client quit deliberately
 
 3. Target Daemon is busy, already in chat with other user / waiting for an invitation to be answered
+
    - this situation is handled via locked class wide flags and the threaded handling of incoming connections to the Daemon
    - the Daemon, although it is busy, can receive the request to connect from a separate Daemon
    - then given that the user is busy in one of the above mentioned ways, the Daemon sends a `FINERR` datagram with the corresponding `error payload`, which the clients can understand and print for the user, resetting the Daemon's invitation and connection status
@@ -144,15 +165,17 @@ self.expected_sequence_number = 0x00   # For receiving datagrams
 ```
 
 Essentially:
+
 - Whenever we are sending a response to an action like an `ACK` or `SYNACK`, we use the sequence number of the received message to to show that this answer belongs to the block.
 - Whenever a block ends in one way or another we iterate on both sequence numbers, switching back and forth between `0x00` and `0x01`, this happens for both of the connected Daemons.
 - When checking for correctness we test the equivalence of sequence numbers
-   -  -> This happens at the start of the `handle_datagram` which is the main function being ran in loop, when we receive a message.
-   - `ack.header.sequence_number == sequence_number` -> And the checking of the reply matching happens in the `send_with_retransmit` as the stop-and-wait can only end if we have received the ACK type datagram with the appropriat sequence number.
+  - -> This happens at the start of the `handle_datagram` which is the main function being ran in loop, when we receive a message.
+  - `ack.header.sequence_number == sequence_number` -> And the checking of the reply matching happens in the `send_with_retransmit` as the stop-and-wait can only end if we have received the ACK type datagram with the appropriat sequence number.
 - When a chat ends in one way or another, we reset to the default starting point for the sequence numbers being `0x00`.
 - If the datagram fails the sequence number check we just ignore that datagram, as we weren't given any specific tasks to do with them in the requirements.
 
 Extra considerations:
+
 - I have made sure that a third party tring to connect doesn't affect and mess up our synchronized sequence number exchange with a different user, so these external requests do not prompt a switch of the class wide sequence numbers and aren't being tested for sequence number correctness. This is what the `skip_sequence_check` attribute is for.
 
 ## Client to Daemon

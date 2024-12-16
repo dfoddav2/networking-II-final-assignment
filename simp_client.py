@@ -4,25 +4,26 @@ import sys
 import queue
 import time
 import select
+from typing import Optional, Tuple
 
 
 class Client:
-    def __init__(self, host):
-        self.host = host
-        self.username = None
-        self.connected = False
+    def __init__(self, host: str) -> None:
+        self.host: str = host
+        self.username: Optional[str] = None
+        self.connected: bool = False
 
         # Message management queue
-        self.message_queue = queue.Queue()
+        self.message_queue: queue.Queue[str] = queue.Queue()
 
         # TCP socket for Client to Daemon communication
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.socket: socket.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
         # Invitation and chat details
-        self.invitation = False
-        self.chatting = False
-        self.chat_addr = None
-        self.chat_user = None
+        self.invitation: bool = False
+        self.chatting: bool = False
+        self.chat_addr: Optional[str] = None
+        self.chat_user: Optional[str] = None
 
         # Connect to the Daemon
         try:
@@ -35,9 +36,9 @@ class Client:
         # Print out the connection output from the Daemon
         # - either fail because the Daemon is already connected to client
         # - or success because the Daemon is connected to the
-        initial_response = self.socket.recv(1024)
+        initial_response: bytes = self.socket.recv(1024)
         if initial_response:
-            message = initial_response.decode('ascii')
+            message: str = initial_response.decode('ascii')
             print("** DAEMON STATUS: ", message, " **\n")
             if "Another client is already connected." in message:
                 # Connection was rejected; close the socket
@@ -55,7 +56,7 @@ class Client:
         threading.Thread(target=self.receive_response, daemon=True).start()
 
     # Send any string command to the local Daemon for processing
-    def send_command(self, command):
+    def send_command(self, command: str) -> None:
         if self.connected:
             self.socket.sendall(command.encode('ascii'))
             # print(f"Sent command: {command}")
@@ -63,12 +64,12 @@ class Client:
             print("\n!! Not connected to daemon. Cannot send command.\n")
 
     # Receive response from the Daemon and display it to the user
-    def receive_response(self):
+    def receive_response(self) -> None:
         while True:
-            response = self.socket.recv(1024)
+            response: bytes = self.socket.recv(1024)
             if not response:
                 break
-            decoded_response = response.decode('ascii')
+            decoded_response: str = response.decode('ascii')
             self.message_queue.put(decoded_response)
             # NOTE: Due to how we are constantly receiving messages and asking for user input at all times,
             # I chose to manage it inside of a queue on the handle_uner_input method
@@ -76,18 +77,18 @@ class Client:
             # - If there is a message in the queue, print it and handle it
             # - If there is no message in the queue, ask for user input as usual
 
-    def handle_user_input(self):
+    def handle_user_input(self) -> None:
         if not self.connected:
             print("Not connected to daemon. Exiting.")
             return
 
-        self.expecting_invitation_input = False
-        prompt_displayed = False
+        self.expecting_invitation_input: bool = False
+        prompt_displayed: bool = False
 
         while True:
             # Check for messages from the daemon
             while not self.message_queue.empty():
-                message = self.message_queue.get()
+                message: str = self.message_queue.get()
                 if message.startswith("CONNECT"):
                     # Handle the invitation
                     self.handle_invitation(message)
@@ -113,7 +114,7 @@ class Client:
             # Now check for user input
             if not prompt_displayed:
                 if self.expecting_invitation_input:
-                    prompt = "\nDo you accept the invitation? (Y/N): "
+                    prompt: str = "\nDo you accept the invitation? (Y/N): "
                 elif self.invitation:
                     prompt = ""
                 elif self.chatting:
@@ -126,7 +127,7 @@ class Client:
             # Use select to check for input availability
             ready, _, _ = select.select([sys.stdin], [], [], 0.1)
             if ready:
-                user_input = sys.stdin.readline().strip()
+                user_input: str = sys.stdin.readline().strip()
                 prompt_displayed = False  # Redisplay prompt
 
                 if self.expecting_invitation_input:
@@ -164,9 +165,9 @@ class Client:
                 time.sleep(0.1)
 
     # Handle the invitation message received through the Daemon
-    def handle_invitation(self, message):
+    def handle_invitation(self, message: str) -> None:
         print(message)  # Display the invitation message
-        accept_invitation = None
+        accept_invitation: Optional[str] = None
         while accept_invitation not in ["Y", "y", "N", "n"]:
             accept_invitation = input(
                 "\nDo you accept the invitation? (Y/N): ")
@@ -178,24 +179,24 @@ class Client:
                 print("Invalid input. Please enter 'Y' or 'N'.")
 
     # Send an invitation to user with ip, through connection initiation message to the Daemon
-    def connect_to_user(self, remote_ip):
+    def connect_to_user(self, remote_ip: str) -> None:
         if remote_ip == self.host:
             print("Cannot connect to self.")
             return
         print(f"\nWaiting for user at {remote_ip} to accept the invitation...")
-        command = f"CONNECT {remote_ip}"
+        command: str = f"CONNECT {remote_ip}"
         self.send_command(command)
 
         # Set the invitation details
         self.invitation = True
 
     # Send a message to the connected user through the Daemon
-    def send_chat_message(self, message):
+    def send_chat_message(self, message: str) -> None:
         print(f"\n------>\n{self.username}: {message}\n------>")
         command = f"CHAT {message}"
         self.send_command(command)
 
-    def quit_chat(self):
+    def quit_chat(self) -> None:
         # TODO: Could do checks in the future to ensure that the user
         # - is the client and thus the Daemon in a chat already
         command = "QUIT"
