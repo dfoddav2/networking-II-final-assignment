@@ -41,13 +41,21 @@ class Daemon:
         self.remote_addr: Optional[Tuple[str, int]] = None
         self.is_in_chat: bool = False
 
+        # NEW: Flag for `send_with_retrnasmission` race condition
+        self.pending_ack: bool = False
+        self.pending_ack_lock: threading.Lock = threading.Lock()
+
     # Send a datagram and wait for an ACK of the message
     def send_with_retransmission(self, datagram: bytes, addr: Tuple[str, int], skip_sequence_check: bool = False) -> bool:
         max_retries: int = 3
         timeout: int = 5  # seconds
         retries: int = 0
-        drop_probability: float = 0.25
+        drop_probability: float = 0.2
         sequence_number: int = Datagram(datagram).header.sequence_number
+
+        # NEW: Set the pending ACK flag to true
+        with self.pending_ack_lock:
+            self.pending_ack = True
 
         while retries < max_retries:
             # Simulate packet loss
@@ -62,10 +70,16 @@ class Daemon:
                     time_elapsed: float = time.time() - start_time
                     if time_elapsed > timeout:
                         raise socket.timeout
+                    # TODO: Is this enough to skip?
+                    # If inside when waiting for an ACK we find that the pending_ack flag is false
+                    # - this means that the ACK was received and handled by handle datagram
+                    with self.pending_ack_lock:
+                        if not self.pending_ack:
+                            return True
                     response, _ = self.daemon_socket.recvfrom(1024)
                     ack = Datagram(response)
                     print(
-                        f"\n<-----------\nDAEMON: Received datagram from {addr}:\n{ack}\n<-----------\n")
+                        f"\n<-----------\nDAEMON: Received datagram (in retransmit) from {addr}:\n{ack}\n<-----------\n")
                     # If the ACK is coming from a third party being rejected, skip the sequence number check and switch
                     if ack.header.operation == OperationType.ACK and skip_sequence_check:
                         return True
@@ -73,6 +87,9 @@ class Daemon:
                     if (ack.header.operation == OperationType.ACK and ack.header.sequence_number == sequence_number):
                         self.send_sequence_number = 0x01 if self.send_sequence_number == 0x00 else 0x00
                         self.expected_sequence_number = 0x01 if self.expected_sequence_number == 0x00 else 0x00
+                        # NEW: Set the pending ACK flag to false
+                        with self.pending_ack_lock:
+                            self.pending_ack = False
                         self.daemon_socket.settimeout(None)
                         return True  # Message was successfully sent, and correct ACK received
             except socket.timeout:
@@ -238,7 +255,16 @@ class Daemon:
                     # Processed datagram, now we can toggle expected_sequence_number and send sequence number
                     self.expected_sequence_number = 0x01 if self.expected_sequence_number == 0x00 else 0x00
                     self.send_sequence_number = 0x01 if self.send_sequence_number == 0x00 else 0x00
-                pass
+
+                # NEW: Handle the ACK of the retransmitted message
+                with self.pending_ack_lock:
+                    if self.pending_ack:
+                        self.pending_ack = False
+                        if (message_received.header.operation == OperationType.ACK and message_received.header.sequence_number == self.send_sequence_number):
+                            print("Expected ACK received for retransmitted message.")
+                        self.send_sequence_number = 0x01 if self.send_sequence_number == 0x00 else 0x00
+                        self.expected_sequence_number = 0x01 if self.expected_sequence_number == 0x00 else 0x00
+                        print(f"\n** Received ACK for retransmitted message. **\n")
         # 2. Chat message (simply forward to client and send ACK)
         elif message_received.header.message_type == MessageType.CHAT:
             # ACK the chat message
@@ -261,11 +287,12 @@ class Daemon:
         try:
             while True:
                 try:
+                    # time.sleep(0.15) # Minimie chance of race condition?
                     # Receive data with timeout
                     data, addr = self.daemon_socket.recvfrom(1024)
                     message_received = Datagram(data)
                     print(
-                        f"\n<-----------\nDAEMON: Received datagram from {addr}:\n{message_received}\n<-----------\n")
+                        f"\n<-----------\nDAEMON: Received datagram (in handle) from {addr}:\n{message_received}\n<-----------\n")
                     # Handle the datagram
                     self.handle_datagram(message_received, addr)
                 except socket.timeout:
@@ -357,6 +384,10 @@ class Daemon:
 
                         print(f"Client user quit deliberately.")
                         break
+                    elif command.startswith("ACCEPT"):
+                        self.handle_accept(0x00)
+                    elif command.startswith("REJECT"):
+                        self.handle_reject(0x00)
                     else:
                         print(
                             f"Received invalid command from client: {command}")
